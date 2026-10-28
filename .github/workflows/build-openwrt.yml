@@ -1,4 +1,4 @@
-name: Build Official OpenWrt v25.12.5 (x86_64 with eBPF)
+name: Build Official OpenWrt v25.12.5 (x86_64 with eBPF & IPv6)
 
 on:
   workflow_dispatch:
@@ -28,10 +28,52 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Run DIY Script
+      - name: Inject Configuration & Dependencies
         run: |
-          chmod +x diy.sh
-          ./diy.sh
+          # 1. 引入第三方 Feeds / 软件包 (如 Argon 主题)
+          git clone https://github.com/jerrykuku/luci-theme-argon.git package/luci-theme-argon
+
+          # 2. 目标架构配置 (x86_64)
+          echo "CONFIG_TARGET_x86=y" >> .config
+          echo "CONFIG_TARGET_x86_64=y" >> .config
+          echo "CONFIG_TARGET_x86_64_DEVICE_generic=y" >> .config
+
+          # 3. 对齐 dae 官方要求的完整 eBPF 内核依赖选项
+          echo "CONFIG_BPF=y" >> .config
+          echo "CONFIG_BPF_SYSCALL=y" >> .config
+          echo "CONFIG_BPF_JIT=y" >> .config
+          echo "CONFIG_CGROUPS=y" >> .config
+          echo "CONFIG_KPROBES=y" >> .config
+          echo "CONFIG_NET_INGRESS=y" >> .config
+          echo "CONFIG_NET_EGRESS=y" >> .config
+          echo "CONFIG_NET_SCH_INGRESS=m" >> .config
+          echo "CONFIG_NET_CLS_BPF=m" >> .config
+          echo "CONFIG_NET_CLS_ACT=y" >> .config
+          echo "CONFIG_BPF_STREAM_PARSER=y" >> .config
+          echo "CONFIG_DEBUG_INFO=y" >> .config
+          echo "# CONFIG_DEBUG_INFO_REDUCED is not set" >> .config
+          echo "CONFIG_DEBUG_INFO_BTF=y" >> .config
+          echo "CONFIG_KPROBE_EVENTS=y" >> .config
+          echo "CONFIG_BPF_EVENTS=y" >> .config
+
+          # 4. 必备组件与驱动 (含 eBPF 模块、TUN 驱动、IPv6 及常用工具)
+          echo "CONFIG_PACKAGE_kmod-bpf=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-core=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-sched-bpf=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-cls-bpf=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-tun=y" >> .config
+          echo "CONFIG_PACKAGE_curl=y" >> .config
+          echo "CONFIG_PACKAGE_htop=y" >> .config
+          echo "CONFIG_PACKAGE_bash=y" >> .config
+          echo "CONFIG_PACKAGE_luci-theme-argon=y" >> .config
+          echo "CONFIG_PACKAGE_odhcpd-ipv6only=y" >> .config
+          echo "CONFIG_PACKAGE_odhcp6c=y" >> .config
+
+          # 5. 仅剔除 PPPoE 拨号组件，保留 IPv6
+          echo "# CONFIG_PACKAGE_ppp is not set" >> .config
+          echo "# CONFIG_PACKAGE_ppp-mod-pppoe is not set" >> .config
+
+          # 生成默认配置文件
           make defconfig
 
       - name: Download Packages
@@ -47,5 +89,5 @@ jobs:
       - name: Upload Firmware to Release
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt-v25.12.5-x86_64-eBPF-Firmware
+          name: OpenWrt-v25.12.5-x86_64-eBPF-IPv6-Firmware
           path: bin/targets/x86/64/*-generic-squashfs-combined-efi.img.gz
