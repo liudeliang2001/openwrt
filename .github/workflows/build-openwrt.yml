@@ -1,0 +1,47 @@
+name: Build Official OpenWrt (x86_64 with eBPF)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Initialization Environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang llvm flex bison gstreamer1.0-plugins-base libssl-dev libglib2.0-dev libxml2-dev libpcap-dev libelf-dev file python3-pip
+
+      - name: Update and Install Feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Run DIY Script
+        run: |
+          chmod +x diy.sh
+          ./diy.sh
+          make defconfig
+
+      - name: Download Packages
+        run: |
+          make download -j$(nproc)
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: Compile Firmware
+        run: |
+          echo "Building..."
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Upload Firmware to Release
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt-x86_64-eBPF-Firmware
+          path: bin/targets/x86/64/*-generic-squashfs-combined-efi.img.gz
